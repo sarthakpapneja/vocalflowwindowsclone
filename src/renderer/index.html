@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VocalFlow Windows</title>
+    <style>
+        :root {
+            --bg-color: rgba(18, 18, 22, 0.85);
+            --accent-color: #007AFF;
+            --text-primary: #FFFFFF;
+            --text-secondary: #A1A1A6;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: var(--bg-color);
+            color: var(--text-primary);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+        }
+
+        header {
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            -webkit-app-region: drag;
+        }
+
+        .title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            background: linear-gradient(135deg, #FFF, #A1A1A6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #FF3B30; /* Idle */
+            box-shadow: 0 0 10px #FF3B30;
+        }
+
+        .status-dot.active {
+            background: #34C759;
+            box-shadow: 0 0 10px #34C759;
+        }
+
+        main {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .balance-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .balance-card {
+            background: var(--glass-bg);
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s;
+        }
+
+        .balance-card:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .balance-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .balance-value {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .transcript-area {
+            flex: 1;
+            background: var(--glass-bg);
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            overflow-y: auto;
+        }
+
+        .recording-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(0, 122, 255, 0.1);
+            border-radius: 50px;
+            border: 1px solid rgba(0, 122, 255, 0.2);
+            color: var(--accent-color);
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .recording-indicator.show {
+            opacity: 1;
+        }
+
+        .wave {
+            display: flex;
+            gap: 3px;
+        }
+
+        .bar {
+            width: 3px;
+            height: 15px;
+            background: var(--accent-color);
+            border-radius: 2px;
+            animation: bounce 1s infinite alternate;
+        }
+
+        @keyframes bounce {
+            from { height: 5px; }
+            to { height: 20px; }
+        }
+
+        footer {
+            padding: 15px;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-align: center;
+            border-top: 1px solid var(--border-color);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="title">VocalFlow</div>
+        <div id="status" class="status-dot"></div>
+    </header>
+
+    <main>
+        <div class="balance-container">
+            <div class="balance-card">
+                <div class="balance-label">Deepgram</div>
+                <div id="deepgram-balance" class="balance-value">Loading...</div>
+            </div>
+            <div class="balance-card">
+                <div class="balance-label">Grok/Groq</div>
+                <div id="groq-balance" class="balance-value">N/A</div>
+            </div>
+        </div>
+
+        <div id="recording-box" class="recording-indicator">
+            <div class="wave">
+                <div class="bar" style="animation-delay: 0.0s"></div>
+                <div class="bar" style="animation-delay: 0.1s"></div>
+                <div class="bar" style="animation-delay: 0.2s"></div>
+                <div class="bar" style="animation-delay: 0.3s"></div>
+            </div>
+            Recording...
+        </div>
+
+        <div id="transcript" class="transcript-area">
+            Hold Option (Mac) or Alt (Windows) to start dictating...
+        </div>
+    </main>
+
+    <footer>
+        Press release to transcribe.
+    </footer>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        const deepgramEl = document.getElementById('deepgram-balance');
+        const groqEl = document.getElementById('groq-balance');
+        const statusEl = document.getElementById('status');
+        const transcriptEl = document.getElementById('transcript');
+        const recordingBox = document.getElementById('recording-box');
+
+        // Update balances every minute
+        async function updateBalances() {
+            const balances = await ipcRenderer.invoke('get-balances');
+            deepgramEl.textContent = balances.deepgram;
+            groqEl.textContent = balances.grok;
+        }
+
+        updateBalances();
+        setInterval(updateBalances, 60000);
+
+        ipcRenderer.on('toggle-record', (event, isRecording) => {
+            recordingBox.classList.toggle('show', isRecording);
+            statusEl.classList.toggle('active', isRecording);
+            
+            if (isRecording) {
+                transcriptEl.textContent = "Listening...";
+                transcriptEl.style.color = "#FFF";
+            }
+        });
+
+        ipcRenderer.on('transcript-update', (event, text, isFinal) => {
+            transcriptEl.textContent = text;
+            if (isFinal) {
+                transcriptEl.style.color = "var(--text-secondary)";
+            }
+        });
+    </script>
+</body>
+</html>
